@@ -3,8 +3,6 @@
 #include <WiFiClient.h>
 #include <esp_camera.h>
 #include <ArduinoJson.h>
-#include <AudioOutputI2S.h>
-#include <SAM.h>
 
 #if __has_include("app_config_local.h")
 #include "app_config_local.h"
@@ -18,8 +16,6 @@ constexpr uint32_t kWiFiConnectTimeoutMs = 20000;
 constexpr uint32_t kInferenceIntervalMs = 8000;
 constexpr uint32_t kHttpTimeoutMs = 15000;
 
-AudioOutputI2S audioOutput;
-SAM voice;
 uint32_t lastInferenceMs = 0;
 
 void logError(const char *message) {
@@ -74,22 +70,6 @@ bool initCamera() {
   sensor->set_whitebal(sensor, 1);
   sensor->set_exposure_ctrl(sensor, 1);
   return true;
-}
-
-void initAudio() {
-  audioOutput.SetPinout(I2S_BCK_PIN, I2S_WS_PIN, I2S_DATA_PIN);
-  audioOutput.SetChannels(1);
-  audioOutput.SetRate(22050);
-  audioOutput.SetGain(0.2f);
-  voice.SetVoice(VOICE_SAM);
-}
-
-void speak(const String &phrase) {
-  Serial.print(F("[FALA] "));
-  Serial.println(phrase);
-  audioOutput.begin();
-  voice.Say(phrase.c_str(), &audioOutput);
-  audioOutput.end();
 }
 
 bool ensureWiFi() {
@@ -160,7 +140,7 @@ bool sendFrameForInference(camera_fb_t *frameBuffer, String &responseBody) {
   return true;
 }
 
-bool parseInference(const String &responseBody, String &label, float &confidence) {
+bool parseInference(const String &responseBody, String &summary, String &bestLabel, float &bestConfidence) {
   DynamicJsonDocument doc(2048);
   DeserializationError err = deserializeJson(doc, responseBody);
   if (err) {
@@ -169,40 +149,43 @@ bool parseInference(const String &responseBody, String &label, float &confidence
   }
 
   JsonArray objects = doc["objects"].as<JsonArray>();
-  if (objects.isNull() || objects.empty()) {
+  if (objects.isNull() || objects.size() == 0) {
     logError("Nenhum objeto identificado");
     return false;
   }
 
   float maxConfidence = -1.0f;
-  String bestLabel;
+  String topLabel;
+  String detected = "Objetos detectados: ";
+  bool first = true;
+
   for (JsonObject obj : objects) {
     const char *candidate = obj["label"] | "";
     float score = obj["confidence"] | 0.0f;
     if (score > maxConfidence) {
       maxConfidence = score;
-      bestLabel = candidate;
+      topLabel = candidate;
     }
+
+    if (!first) {
+      detected += ", ";
+    }
+    detected += candidate;
+    detected += " (";
+    detected += String(score * 100.0f, 1);
+    detected += "%)";
+    first = false;
   }
 
-  if (bestLabel.isEmpty()) {
+  if (topLabel.isEmpty()) {
     logError("Objeto sem rótulo");
     return false;
   }
 
-  label = bestLabel;
-  confidence = maxConfidence;
+  bestLabel = topLabel;
+  bestConfidence = maxConfidence;
+  summary = detected;
   return true;
-}
-
-String buildSpeechPhrase(const String &label, float confidence) {
-  String phrase = "Detected ";
-  phrase += label;
-  phrase += " ";
-  phrase += String(confidence * 100.0f, 0);
-  phrase += " percent.";
-  phrase.toUpperCase();
-  return phrase;
 }
 
 void performInference() {
@@ -219,15 +202,17 @@ void performInference() {
     return;
   }
 
-  String label;
+  String summary;
+  String bestLabel;
   float confidence = 0.0f;
-  if (!parseInference(body, label, confidence)) {
+  if (!parseInference(body, summary, bestLabel, confidence)) {
     return;
   }
 
-  Serial.printf("[OBJETO] %s (%.1f%%)\n", label.c_str(), confidence * 100.0f);
-  const String phrase = buildSpeechPhrase(label, confidence);
-  speak(phrase);
+  Serial.println();
+  Serial.println(F("[INFERÊNCIA]"));
+  Serial.println(summary);
+  Serial.printf("Mais provável: %s (%.1f%%)\n", bestLabel.c_str(), confidence * 100.0f);
 }
 
 }  // namespace
@@ -242,8 +227,6 @@ void setup() {
     delay(5000);
     ESP.restart();
   }
-
-  initAudio();
 }
 
 void loop() {

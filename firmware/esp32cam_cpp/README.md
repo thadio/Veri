@@ -1,28 +1,17 @@
-# ESP32-CAM Visão + Voz (C++)
+# ESP32-CAM Visão (C++)
 
-Projeto em C++ (Arduino / PlatformIO) que permite à ESP32-CAM (câmera OV2640) capturar imagens, enviar para um serviço de visão computacional e, em seguida, sintetizar voz informando o objeto identificado.
+Projeto em C++ (Arduino / PlatformIO) que permite à ESP32-CAM (câmera OV2640) capturar imagens, enviar para um serviço de visão computacional e descrever os objetos identificados via monitor serial.
 
 ## Visão geral
 - A ESP32-CAM captura um frame JPEG (`FRAMESIZE_QVGA`) periodicamente.
 - O firmware envia o JPEG bruto via HTTP (`POST /infer`) para um servidor em rede local.
 - O servidor executa uma rede YOLO (modelo `yolov8n.pt` por padrão) e devolve um JSON com os objetos detectados.
-- O firmware fala em voz alta o rótulo com maior confiança utilizando o sintetizador SAM (biblioteca `ESP8266SAM`) via saídas I2S.
+- O firmware mostra no monitor serial os objetos detectados e destaca o mais provável.
 
 ## Hardware
 - ESP32-CAM (módulo AI-Thinker ou equivalente com PSRAM).
-- Módulo amplificador I2S (ex.: MAX98357A) + alto-falante de 4–8 Ω.
+- Cabo USB + base ESP32-CAM-MB ou adaptador serial.
 - Alimentação estável (>= 5 V / 2 A recomendável).
-
-### Ligações sugeridas (ESP32-CAM → Amplificador I2S)
-| Sinal | ESP32-CAM | Amplificador |
-|-------|-----------|--------------|
-| BCK   | GPIO12    | BCLK         |
-| WS    | GPIO13    | LRCLK        |
-| DATA  | GPIO15    | DIN          |
-| 5 V   | 5V        | VCC          |
-| GND   | GND       | GND          |
-
-> ⚠️ GPIO12/13/15 são pinos de boot strap; mantenha o amplificador desligado durante o flash para evitar conflitos. Após o upload, ligue o amplificador.
 
 ## Configuração do firmware
 1. Duplique `include/app_config.h` como `include/app_config_local.h` e preencha:
@@ -33,7 +22,7 @@ Projeto em C++ (Arduino / PlatformIO) que permite à ESP32-CAM (câmera OV2640) 
    #define INFERENCE_PORT 8000
    #define INFERENCE_PATH "/infer"
    ```
-2. Ajuste os pinos I2S caso sua montagem utilize outros GPIOs.
+2. Ajuste `INFERENCE_HOST`/`PORT/PATH` para combinar com o servidor que você executará.
 
 ## Compilação e upload (PlatformIO)
 ```bash
@@ -43,7 +32,7 @@ pio run -t upload         # grava via USB/serial
 pio device monitor        # abre o monitor serial (115200 bps)
 ```
 
-> Se utilizar a IDE Arduino, importe o diretório `src/` e ajuste as bibliotecas manualmente (`ArduinoJson`, `esp32-camera`, `ESP8266Audio`, `ESP8266SAM`).
+> Se utilizar a IDE Arduino, importe o diretório `src/` e instale as bibliotecas `ArduinoJson` (>= 6.21) e certifique-se de que o núcleo ESP32 esteja atualizado (inclui `esp32-camera`).
 
 ## Servidor de inferência
 O diretório `scripts/` contém um servidor FastAPI (`inference_server.py`) que usa YOLOv8 para inferência.
@@ -80,9 +69,8 @@ uvicorn inference_server:app --host 0.0.0.0 --port 8000
 - A cada ~8 s:
   1. Captura `camera_fb_t`.
   2. Envia via HTTP (JPEG binário) para `INFERENCE_HOST:INFERENCE_PORT/INFERENCE_PATH`.
-  3. Analisa o JSON com `ArduinoJson` e seleciona o objeto com maior confiança.
-  4. Mostra no monitor serial e gera frase (`"DETECTED <LABEL> <CONFIDENCE> PERCENT"`).
-  5. Fala a frase usando `SAM::Say`.
+  3. Analisa o JSON com `ArduinoJson`, gera um resumo textual dos objetos e o escreve no monitor serial.
+  4. Destaca o objeto mais provável com sua confiança.
 
 ## Ajustes úteis
 - Reduza `kInferenceIntervalMs` para inferências mais frequentes.
@@ -92,7 +80,7 @@ uvicorn inference_server:app --host 0.0.0.0 --port 8000
 
 ## Limitações e próximos passos
 - YOLOv8 roda no servidor externo; a ESP32-CAM apenas captura e envia imagens.
-- O sintetizador SAM possui voz robótica e suporte limitado ao português. Integre outra lib de TTS (ex.: `ESP32-TTS`, `Flite`, streaming de áudio gerado no servidor) para melhor resultado.
+- Para saída de áudio, considere integrar futuramente um sintetizador de voz ou reproduzir áudio pré-gravado, adicionando o hardware de som correspondente.
 - Para operação offline, treine e converta um modelo leve (por exemplo, Edge Impulse FOMO) para rodar na ESP32, mas isso exigirá otimizações e ajustes significativos.
 
 ## Licença

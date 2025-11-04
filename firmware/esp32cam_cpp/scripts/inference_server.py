@@ -5,7 +5,14 @@ from typing import List
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
 from PIL import Image
+from torch.nn.modules.container import Sequential
+from torch.serialization import add_safe_globals
 from ultralytics import YOLO
+from ultralytics.nn.tasks import DetectionModel
+
+# Permite carregar pesos YOLO quando torch.load usa weights_only=True (PyTorch >=2.6)
+os.environ.setdefault("TORCH_LOAD_WEIGHTS_ONLY", "0")
+add_safe_globals([DetectionModel, Sequential])
 
 MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "yolov8n.pt")
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.35"))
