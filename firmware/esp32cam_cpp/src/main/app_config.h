@@ -4,8 +4,8 @@
 // The build will prefer app_config_local.h if present.
 
 // Wi-Fi credentials
-#define WIFI_SSID     "REPLACE_WITH_SSID"
-#define WIFI_PASSWORD "REPLACE_WITH_PASSWORD"
+#define WIFI_SSID     "DTH-GOOGLE"
+#define WIFI_PASSWORD "dth1301103"
 
 // Inference service endpoint (HTTP)
 #define INFERENCE_HOST "192.168.0.100"
